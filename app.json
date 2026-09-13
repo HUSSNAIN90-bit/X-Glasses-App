@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "X-Glasses",
+    "slug": "x-glasses-mobile-companion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "xglasses",
+    "userInterfaceStyle": "dark",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow X-Glasses to use the camera for visual assistance."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow X-Glasses to use the microphone for voice commands.",
+          "speechRecognitionPermission": "Allow X-Glasses to recognize your speech.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+          ]
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.xglasses.companion",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.xglasses.companion",
+      "infoPlist": {
+        "NSCameraUsageDescription": "X-Glasses uses the camera to understand surroundings.",
+        "NSMicrophoneUsageDescription": "X-Glasses uses the microphone for voice commands."
+      }
+    }
+  }
+}

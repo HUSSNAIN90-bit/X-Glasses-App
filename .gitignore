@@ -1,0 +1,7 @@
+node_modules/
+.expo/
+.env
+npm-debug.log*
+android
+.idea
+.expo
