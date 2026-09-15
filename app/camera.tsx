@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { analyzeCommandMulti, CommandResponse } from "@/lib/api";
+import { analyzeCommandMulti, CommandResponse, enrollFaceMulti } from "@/lib/api";
 import {
   AssistantStatus,
   cleanAssistantText,
@@ -69,6 +69,42 @@ function needsAnotherFrameBatch(response: CommandResponse) {
       processing.frame_quality?.length &&
       processing.frame_quality.every((frame) => !frame.good),
   );
+}
+
+function parseEnrollmentCommand(command: string) {
+  const normalized = command.replace(/\s+/g, " ").trim();
+  const relationships = "friend|frnd|brother|sister|mother|father|wife|husband|colleague|coworker|teacher";
+  const relationMatch = normalized.match(
+    new RegExp(
+      `\\b(?:this(?:\\s+person)?\\s+is|he\\s+is|she\\s+is|they\\s+are|meet)\\s+(?:my\\s+)?(${relationships})\\s*[,:]?\\s*(?:named\\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)`,
+      "i",
+    ),
+  );
+  if (relationMatch) {
+    return {
+      name: relationMatch[2].trim().replace(/[.!?]+$/, ""),
+      relationship: relationMatch[1].toLowerCase().replace("frnd", "friend").replace("coworker", "coworker"),
+    };
+  }
+
+  const nameMatch = normalized.match(
+    /\b(?:this(?:\s+person)?\s+is|he\s+is|she\s+is|they\s+are|meet)\s+(?:named\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)/i,
+  );
+  if (nameMatch) {
+    return { name: nameMatch[1].trim(), relationship: undefined };
+  }
+
+  const saveMatch = normalized.match(
+    /\b(?:remember|save|introduce)\s+(?:this\s+(?:person|face)|him|her|them)\s+(?:as|is)\s+(?:(?:my\s+)?(friend|frnd|brother|sister|mother|father|wife|husband|colleague|coworker|teacher)\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)/i,
+  );
+  if (saveMatch) {
+    return {
+      name: saveMatch[2].trim(),
+      relationship: saveMatch[1]?.toLowerCase().replace("frnd", "friend"),
+    };
+  }
+
+  return null;
 }
 
 export default function Camera() {
@@ -136,17 +172,17 @@ export default function Camera() {
     }
   }
 
-  async function captureCommandFrames() {
+  async function captureCommandFrames(count = 3) {
     if (!cameraRef.current) throw new Error("Camera is not ready.");
     const uris: string[] = [];
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.78,
         skipProcessing: true,
       });
       if (photo?.uri) uris.push(photo.uri);
-      if (index < 2) await new Promise((resolve) => setTimeout(resolve, 90));
+      if (index < count - 1) await new Promise((resolve) => setTimeout(resolve, 120));
     }
 
     if (!uris.length) throw new Error("Camera did not return a frame.");
@@ -183,9 +219,26 @@ export default function Camera() {
     setAnswer(null);
 
     try {
+      const enrollment = parseEnrollmentCommand(trimmedCommand);
+
+      if (enrollment) {
+        setNotice("Saving several clear face views automatically...");
+        const uris = await captureCommandFrames(8);
+        setStatus("processing");
+        const result = await enrollFaceMulti(
+          enrollment.name,
+          enrollment.relationship,
+          uris,
+        );
+        const reply = cleanAssistantText(result.reply) || "I couldn't complete face enrollment.";
+        setNotice(reply);
+        speakFinalReply(reply);
+        return;
+      }
+
       let response: CommandResponse | null = null;
       for (let attempt = 0; attempt < MAX_CAPTURE_ATTEMPTS; attempt += 1) {
-        const uris = await captureCommandFrames();
+        const uris = await captureCommandFrames(3);
         setStatus("processing");
         response = await analyzeCommandMulti(session, trimmedCommand, uris, "en");
 
