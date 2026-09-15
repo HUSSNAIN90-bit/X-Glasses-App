@@ -16,9 +16,9 @@ export type CommandResponse={
 };
 export type ChatResponse={success:boolean;session_id:string;user_message:string;reply:string;intent:string};
 export type PersonListItem={person_id:string;name:string;created_at:string;embedding_count:number};
+export type MultiEnrollmentResponse={success:boolean;reply:string;person_id?:string|null;accepted_frames:number;attempted_frames:number;good_quality_frames:number};
 
 const part=(uri:string,name="frame.jpg")=>({uri,name,type:"image/jpeg"} as unknown as Blob);
-
 
 export async function healthCheck(){return (await api.get("/health")).data}
 
@@ -29,6 +29,16 @@ export async function analyzeCommandMulti(sessionId:string,command:string,uris:s
   f.append("language",language);
   uris.slice(0,3).forEach((uri,i)=>f.append("images",part(uri,`command-${i+1}.jpg`)));
   const data=(await api.post<CommandResponse>("/api/vision/analyze-command-multi",f,{headers:{"Content-Type":"multipart/form-data"}})).data;
+  data.reply=cleanAssistantText(data.reply);
+  return data;
+}
+
+export async function enrollFaceMulti(name:string,relationship:string|undefined,uris:string[]){
+  const f=new FormData();
+  f.append("name",name);
+  if(relationship?.trim()) f.append("relationship",relationship.trim());
+  uris.slice(0,8).forEach((uri,i)=>f.append("images",part(uri,`enrollment-${i+1}.jpg`)));
+  const data=(await api.post<MultiEnrollmentResponse>("/api/faces/enroll-multi",f,{headers:{"Content-Type":"multipart/form-data"}})).data;
   data.reply=cleanAssistantText(data.reply);
   return data;
 }
