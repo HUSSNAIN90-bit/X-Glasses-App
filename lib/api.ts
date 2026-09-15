@@ -33,6 +33,18 @@ export async function analyzeCommandMulti(sessionId:string,command:string,uris:s
   return data;
 }
 
+export async function analyzeProductCommand(sessionId:string,command:string,uris:string[],barcodeRetry=false,language="en"){
+  const f=new FormData();
+  f.append("session_id",sessionId);
+  f.append("command",command);
+  f.append("language",language);
+  f.append("barcode_retry",String(barcodeRetry));
+  uris.slice(0,6).forEach((uri,i)=>f.append("frames",part(uri,`product-${i+1}.jpg`)));
+  const data=(await api.post<CommandResponse>("/api/product/command",f,{headers:{"Content-Type":"multipart/form-data"}})).data;
+  data.reply=cleanAssistantText(data.reply);
+  return data;
+}
+
 export async function enrollFaceMulti(name:string,relationship:string|undefined,uris:string[]){
   const f=new FormData();
   f.append("name",name);
