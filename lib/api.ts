@@ -20,9 +20,16 @@ export type MultiEnrollmentResponse={success:boolean;reply:string;person_id?:str
 
 const part=(uri:string,name="frame.jpg")=>({uri,name,type:"image/jpeg"} as unknown as Blob);
 
+function isProductCommand(command:string){
+  return /\b(product|barcode|bar code|qr|price|pricing|cost|label|brand|model|sku|upc|ean|gtin|packaging|package)\b/i.test(command);
+}
+
 export async function healthCheck(){return (await api.get("/health")).data}
 
 export async function analyzeCommandMulti(sessionId:string,command:string,uris:string[],language="en"){
+  if(isProductCommand(command)){
+    return analyzeProductCommand(sessionId,command,uris,false,language);
+  }
   const f=new FormData();
   f.append("session_id",sessionId);
   f.append("command",command);
