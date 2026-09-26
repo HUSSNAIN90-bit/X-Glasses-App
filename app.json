@@ -23,7 +23,9 @@
             "com.google.android.as"
           ]
         }
-      ]
+      ],
+      "@nitro-mlkit/face-detection",
+      "@nitro-mlkit/face-recognition"
     ],
     "android": {
       "package": "com.xglasses.companion",
