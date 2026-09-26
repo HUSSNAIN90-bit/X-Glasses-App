@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Asset } from "expo-asset";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import CryptoJS from "crypto-js";
@@ -28,10 +29,6 @@ const PROFILE_PREFIX = "xglasses.face.profile.";
 const MATCH_THRESHOLD = 0.68;
 const MIN_MARGIN = 0.04;
 const MAX_ENROLL_SAMPLES = 5;
-
-function modelUrl() {
-  return (process.env.EXPO_PUBLIC_FACE_MODEL_URL ?? "").trim();
-}
 
 async function encryptionKey() {
   let key = await SecureStore.getItemAsync(KEY_KEY);
@@ -89,14 +86,17 @@ export async function initializeFaceRecognition() {
 
   if (NitroRecognizer.isModelReady()) return true;
 
-  const url = modelUrl();
-  if (!url) {
-    throw new Error(
-      "Face model is not configured. Set EXPO_PUBLIC_FACE_MODEL_URL to a licensed MobileFaceNet .tflite file.",
-    );
+  const modelAsset = Asset.fromModule(
+    require("../assets/models/mobile_facenet.tflite"),
+  );
+  await modelAsset.downloadAsync();
+
+  const modelUri = modelAsset.localUri ?? modelAsset.uri;
+  if (!modelUri) {
+    throw new Error("The bundled MobileFaceNet model could not be located.");
   }
 
-  const loaded = await NitroRecognizer.downloadModel(url);
+  const loaded = await NitroRecognizer.loadModel(modelUri);
   if (!loaded) throw new Error("The on-device face model could not be loaded.");
   return true;
 }
