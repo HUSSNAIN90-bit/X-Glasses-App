@@ -13,7 +13,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { analyzeCommandMulti, CommandResponse, enrollFaceMulti } from "@/lib/api";
+import { analyzeCommandMulti, CommandResponse } from "@/lib/api";
+import { answerLocalFaceCommand, enrollLocalFace, isFaceIdentityCommand } from "@/lib/faceRecognition";
 import {
   AssistantStatus,
   cleanAssistantText,
@@ -181,8 +182,17 @@ export default function Camera() {
         scrollToBottom();
         const uris = await captureCommandFrames(8);
         setStatus("processing");
-        const result = await enrollFaceMulti(enrollment.name, enrollment.relationship, uris);
-        const reply = cleanAssistantText(result.reply) || "I couldn't complete face enrollment.";
+        const result = await enrollLocalFace(enrollment.name, enrollment.relationship, uris);
+        const reply = `Saved ${result.name} on this device. I’ll recognize them locally.`;
+        setNotice(reply);
+        scrollToBottom();
+        speakFinalReply(reply);
+        return;
+      }
+      if (isFaceIdentityCommand(trimmedCommand)) {
+        const uris = await captureCommandFrames(2);
+        setStatus("processing");
+        const reply = cleanAssistantText(await answerLocalFaceCommand(uris));
         setNotice(reply);
         scrollToBottom();
         speakFinalReply(reply);
