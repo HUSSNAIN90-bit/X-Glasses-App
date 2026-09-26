@@ -1,7 +1,7 @@
 import {CameraView,useCameraPermissions} from "expo-camera";
 import {useEffect,useRef,useState} from "react";
 import {Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
-import {deletePerson,enrollFaceMulti,listPeople,PersonListItem} from "@/lib/api";
+import {deleteLocalFacePerson, enrollLocalFace, listLocalFacePeople, LocalFacePerson} from "@/lib/faceRecognition";
 import {GlassCard} from "@/components/GlassCard";
 import {PrimaryButton} from "@/components/PrimaryButton";
 
@@ -9,13 +9,13 @@ const ENROLL_FRAME_COUNT=8;
 const ENROLL_FRAME_DELAY_MS=280;
 
 export default function People(){
-  const[people,setPeople]=useState<PersonListItem[]>([]);
+  const[people,setPeople]=useState<LocalFacePerson[]>([]);
   const[modal,setModal]=useState(false);
   const[error,setError]=useState("");
 
   async function load(){
     try{
-      setPeople((await listPeople()).people);
+      setPeople(await listLocalFacePeople());
       setError("");
     }catch(e){
       setError(e instanceof Error?e.message:"Unable to load people.");
@@ -26,7 +26,7 @@ export default function People(){
 
   async function del(id:string){
     try{
-      await deletePerson(id);
+      await deleteLocalFacePerson(id);
       await load();
     }catch(e){
       setError(e instanceof Error?e.message:"Delete failed.");
@@ -36,10 +36,11 @@ export default function People(){
   return <ScrollView style={s.root} contentContainerStyle={s.content}>
     <PrimaryButton title="Enroll New Person" onPress={()=>{setError("");setModal(true)}}/>
     {error?<Text style={s.error}>{error}</Text>:null}
-    {people.map(p=><GlassCard key={p.person_id}>
+    {people.map(p=><GlassCard key={p.id}>
       <Text style={s.name}>{p.name}</Text>
-      <Text style={s.meta}>{p.embedding_count} face embedding(s)</Text>
-      <Pressable onPress={()=>void del(p.person_id)}>
+      <Text style={s.meta}>{p.sampleCount} local face sample(s)</Text>
+      {p.relationship?<Text style={s.meta}>Relationship: {p.relationship}</Text>:null}
+      <Pressable onPress={()=>void del(p.id)}>
         <Text style={s.delete}>Delete</Text>
       </Pressable>
     </GlassCard>)}
@@ -102,17 +103,13 @@ function Enroll({visible,close,done}:{visible:boolean;close:()=>void;done:()=>Pr
       }
 
       setStatus(`Analyzing ${uris.length} face frames…`);
-      const result=await enrollFaceMulti(name.trim(),relationship.trim()||undefined,uris);
+      const result=await enrollLocalFace(name.trim(),relationship.trim()||undefined,uris);
 
-      if(result.success===false){
-        throw new Error(result.reply||"Face enrollment failed.");
+      if(!result){
+        throw new Error("Face enrollment failed.");
       }
 
-      setStatus(
-        result.accepted_frames!=null
-          ? `Enrolled successfully — ${result.accepted_frames} good frame(s) saved.`
-          : "Enrolled successfully."
-      );
+      setStatus(`Enrolled successfully — ${result.sampleCount} local face sample(s) saved.`);
 
       await sleep(700);
       setName("");
