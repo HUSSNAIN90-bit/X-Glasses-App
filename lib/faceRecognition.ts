@@ -80,9 +80,6 @@ export async function deleteLocalFacePerson(id: string) {
   const rawIndex = await AsyncStorage.getItem(INDEX_KEY);
   const ids: string[] = rawIndex ? JSON.parse(rawIndex) : [];
   await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(ids.filter((value) => value !== id)));
-  try {
-    NitroRecognizer.removePerson(id);
-  } catch {}
 }
 
 export async function initializeFaceRecognition() {
@@ -177,17 +174,6 @@ export async function enrollLocalFace(
     embeddings.slice(0, MAX_ENROLL_SAMPLES).map((item) => item.vector),
   );
   const id = personId(name);
-
-  // Keep the native registry hot for the current app session.
-  const firstGoodFrame = imageUris[embeddings[0].frame];
-  const registered = await NitroRecognizer.registerPerson(id, name, firstGoodFrame);
-  if (!registered) throw new Error("The face could not be enrolled on this device.");
-
-  for (const item of embeddings.slice(1, MAX_ENROLL_SAMPLES)) {
-    try {
-      await NitroRecognizer.addReference(id, imageUris[item.frame]);
-    } catch {}
-  }
 
   const profile: LocalFacePerson = {
     id,
