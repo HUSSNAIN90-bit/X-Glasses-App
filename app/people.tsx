@@ -1,7 +1,8 @@
 import {CameraView,useCameraPermissions} from "expo-camera";
 import {useEffect,useRef,useState} from "react";
 import {Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from "react-native";
-import {deleteLocalFacePerson, enrollLocalFace, listLocalFacePeople, LocalFacePerson} from "@/lib/faceRecognition";
+import {deleteLocalFacePerson, enrollLocalFace, listLocalFacePeople} from "@/lib/faceRecognition";
+import type {LocalFacePerson} from "@/lib/faceRecognition";
 import {GlassCard} from "@/components/GlassCard";
 import {PrimaryButton} from "@/components/PrimaryButton";
 
@@ -84,7 +85,7 @@ function Enroll({visible,close,done}:{visible:boolean;close:()=>void;done:()=>Pr
       const uris:string[]=[];
 
       // Capture several slightly different frames instead of relying on one photo.
-      // The backend's existing quality gate will decide which frames are usable.
+      // Local face detection/embedding decides which captured frames are usable.
       for(let i=0;i<ENROLL_FRAME_COUNT;i++){
         setProgress(i+1);
         setStatus(`Capturing face… ${i+1}/${ENROLL_FRAME_COUNT}`);
