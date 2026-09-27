@@ -95,7 +95,10 @@ function Enroll({visible,close,done}:{visible:boolean;close:()=>void;done:()=>Pr
           skipProcessing:false,
         });
 
-        if(photo?.uri)uris.push(photo.uri);
+        if(photo?.uri){
+          uris.push(photo.uri);
+          console.log(`[XGLASSES_FACE] enrollment frame: ${i+1}/${ENROLL_FRAME_COUNT} captured`);
+        }
         if(i<ENROLL_FRAME_COUNT-1)await sleep(ENROLL_FRAME_DELAY_MS);
       }
 

@@ -69,13 +69,21 @@ function parseEnrollmentCommand(command: string) {
   const relationMatch = normalized.match(
     new RegExp(`\\b(?:this(?:\\s+person)?\\s+is|he\\s+is|she\\s+is|they\\s+are|meet)\\s+(?:my\\s+)?(${relationships})\\s*[,:]?\\s*(?:named\\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)`, "i"),
   );
-  if (relationMatch) {
-    return { name: relationMatch[2].trim().replace(/[.!?]+$/, ""), relationship: relationMatch[1].toLowerCase().replace("frnd", "friend") };
+  if (relationMatch?.[1] && relationMatch[2]) {
+    return {
+      name: relationMatch[2].trim().replace(/[.!?]+$/, ""),
+      relationship: relationMatch[1].toLowerCase().replace("frnd", "friend"),
+    };
   }
   const nameMatch = normalized.match(/\b(?:this(?:\s+person)?\s+is|he\s+is|she\s+is|they\s+are|meet)\s+(?:named\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)/i);
-  if (nameMatch) return { name: nameMatch[1].trim(), relationship: undefined };
+  if (nameMatch?.[1]) return { name: nameMatch[1].trim(), relationship: undefined };
   const saveMatch = normalized.match(/\b(?:remember|save|introduce)\s+(?:this\s+(?:person|face)|him|her|them)\s+(?:as|is)\s+(?:(?:my\s+)?(friend|frnd|brother|sister|mother|father|wife|husband|colleague|coworker|teacher)\s+)?([A-Za-z][A-Za-z' -]{0,48})(?:[.!?]|$)/i);
-  if (saveMatch) return { name: saveMatch[2].trim(), relationship: saveMatch[1]?.toLowerCase().replace("frnd", "friend") };
+  if (saveMatch?.[2]) {
+    return {
+      name: saveMatch[2].trim(),
+      relationship: saveMatch[1]?.toLowerCase().replace("frnd", "friend"),
+    };
+  }
   return null;
 }
 

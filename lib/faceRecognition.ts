@@ -30,15 +30,24 @@ const MATCH_THRESHOLD = 0.68;
 const MIN_MARGIN = 0.04;
 const MAX_ENROLL_SAMPLES = 5;
 
-async function encryptionKey() {
-  let key = await SecureStore.getItemAsync(KEY_KEY);
-  if (!key) {
-    key = Crypto.randomUUID();
+async function generateSecureEncryptionKey() {
+  const bytes = await Crypto.getRandomBytesAsync(32);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function encryptionKey(): Promise<string> {
+  let key = (await SecureStore.getItemAsync(KEY_KEY)) ?? null;
+  const needsReplacement = !key || key.length !== 64 || !/^[0-9a-f]+$/i.test(key);
+
+  if (needsReplacement) {
+    key = await generateSecureEncryptionKey();
     await SecureStore.setItemAsync(KEY_KEY, key, {
       keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     });
+    console.log("[XGLASSES_FACE] encryption key generated");
   }
-  return key;
+
+  return key as string;
 }
 
 async function saveProfile(profile: LocalFacePerson) {
@@ -51,6 +60,7 @@ async function saveProfile(profile: LocalFacePerson) {
     ids.push(profile.id);
     await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(ids));
   }
+  console.log(`[XGLASSES_FACE] profile saved: samples=${profile.sampleCount}`);
 }
 
 export async function listLocalFacePeople(): Promise<LocalFacePerson[]> {
@@ -80,14 +90,22 @@ export async function deleteLocalFacePerson(id: string) {
 }
 
 export async function initializeFaceRecognition() {
+  console.log("[XGLASSES_FACE] initializing recognizer");
+
   if (!NitroRecognizer.isSupported()) {
     throw new Error("On-device face recognition is only available on Android and iOS.");
   }
 
-  if (NitroRecognizer.isModelReady()) return true;
+  if (NitroRecognizer.isModelReady()) {
+    console.log("[XGLASSES_FACE] model already loaded");
+    return true;
+  }
 
+  // The Nitro recognizer expects a MobileFaceNet-style RGB input tensor shaped
+  // [1, 112, 112, 3] and a fixed 192-d embedding output. Do not use the other
+  // paired model variant bundled in this repo, which uses a different tensor layout.
   const modelAsset = Asset.fromModule(
-    require("../assets/models/mobile_facenet.tflite"),
+    require("../assets/models/mobile_face_net.tflite"),
   );
   await modelAsset.downloadAsync();
 
@@ -96,8 +114,10 @@ export async function initializeFaceRecognition() {
     throw new Error("The bundled MobileFaceNet model could not be located.");
   }
 
+  console.log("[XGLASSES_FACE] model loading", modelUri);
   const loaded = await NitroRecognizer.loadModel(modelUri);
   if (!loaded) throw new Error("The on-device face model could not be loaded.");
+  console.log("[XGLASSES_FACE] model loaded");
   return true;
 }
 
@@ -105,12 +125,22 @@ async function extractFaceEmbeddings(imageUris: string[]) {
   const embeddings: Array<{ frame: number; vector: number[] }> = [];
 
   for (let frame = 0; frame < imageUris.length; frame += 1) {
-    const crops = await NitroFace.cropFaces(imageUris[frame], 0.28);
+    const uri = imageUris[frame];
+    if (!uri) continue;
+
+    const crops = await NitroFace.cropFaces(uri, 0.28);
+    console.log("[XGLASSES_FACE] faces detected:", crops.length);
     if (crops.length !== 1) continue;
 
-    const result = await NitroRecognizer.extractEmbedding(crops[0].uri);
-    if (result?.vector?.length) {
-      embeddings.push({ frame, vector: normalize(result.vector) });
+    const crop = crops[0];
+    if (!crop) continue;
+
+    const result = await NitroRecognizer.extractEmbedding(crop.uri);
+    if (result?.vector) {
+      console.log("[XGLASSES_FACE] embedding dimension:", result.vector.length);
+      if (result.vector.length) {
+        embeddings.push({ frame, vector: normalize(result.vector) });
+      }
     }
   }
 
@@ -125,24 +155,31 @@ function normalize(vector: number[]) {
 }
 
 function averageVectors(vectors: number[][]) {
-  if (!vectors.length) return [];
+  if (!vectors.length || !vectors[0]?.length) return [];
   const size = vectors[0].length;
   const result = new Array<number>(size).fill(0);
   for (const vector of vectors) {
-    for (let i = 0; i < size; i += 1) result[i] += vector[i] ?? 0;
+    if (!vector) continue;
+    for (let i = 0; i < size; i += 1) {
+      const value = vector[i] ?? 0;
+      result[i] = (result[i] ?? 0) + value;
+    }
   }
   return normalize(result.map((value) => value / vectors.length));
 }
 
 function cosine(a: number[], b: number[]) {
+  if (!a.length || !b.length) return 0;
   const size = Math.min(a.length, b.length);
   let dot = 0;
   let aa = 0;
   let bb = 0;
   for (let i = 0; i < size; i += 1) {
-    dot += a[i] * b[i];
-    aa += a[i] * a[i];
-    bb += b[i] * b[i];
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    dot += av * bv;
+    aa += av * av;
+    bb += bv * bv;
   }
   if (!aa || !bb) return 0;
   return dot / (Math.sqrt(aa) * Math.sqrt(bb));
@@ -163,9 +200,11 @@ export async function enrollLocalFace(
   relationship: string | undefined,
   imageUris: string[],
 ) {
+  console.log("[XGLASSES_FACE] enrollment started");
   await initializeFaceRecognition();
 
   const embeddings = await extractFaceEmbeddings(imageUris.slice(0, 8));
+  console.log("[XGLASSES_FACE] valid embeddings:", embeddings.length);
   if (embeddings.length < 3) {
     throw new Error("I need at least 3 clear face views. Look straight at the camera and try again.");
   }
@@ -200,7 +239,10 @@ export async function recognizeLocalFaces(imageUris: string[]): Promise<LocalFac
     const crops = await NitroFace.cropFaces(uri, 0.28);
 
     for (let faceIndex = 0; faceIndex < crops.length; faceIndex += 1) {
-      const embeddingResult = await NitroRecognizer.extractEmbedding(crops[faceIndex].uri);
+      const crop = crops[faceIndex];
+      if (!crop) continue;
+
+      const embeddingResult = await NitroRecognizer.extractEmbedding(crop.uri);
       const probe = normalize(embeddingResult.vector);
 
       const ranked = people
@@ -209,11 +251,17 @@ export async function recognizeLocalFaces(imageUris: string[]): Promise<LocalFac
           similarity: cosine(probe, person.embedding),
         }))
         .sort((a, b) => b.similarity - a.similarity);
+      ranked.forEach((candidate, candidateIndex) => {
+        console.log(
+          `[XGLASSES_FACE] recognition similarity: face=${faceIndex} candidate=${candidateIndex} score=${candidate.similarity.toFixed(4)}`,
+        );
+      });
 
-      const best = ranked[0];
-      const second = ranked[1];
+      const best = ranked[0] ?? null;
+      const second = ranked[1] ?? null;
+      if (!best) continue;
+
       const recognized =
-        Boolean(best) &&
         best.similarity >= MATCH_THRESHOLD &&
         (!second || best.similarity - second.similarity >= MIN_MARGIN);
 
@@ -221,9 +269,12 @@ export async function recognizeLocalFaces(imageUris: string[]): Promise<LocalFac
         faceIndex,
         name: recognized ? best.person.name : null,
         relationship: recognized ? best.person.relationship : undefined,
-        similarity: best?.similarity ?? null,
+        similarity: best.similarity,
         recognized,
       });
+      console.log(
+        `[XGLASSES_FACE] recognition result: face=${faceIndex} recognized=${recognized}`,
+      );
     }
 
     if (matches.length) break;
