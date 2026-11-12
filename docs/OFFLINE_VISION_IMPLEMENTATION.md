@@ -25,6 +25,8 @@ The local face-identity path must remain local: no face images, face embeddings,
 
 ## Object detection / pose requirements
 
+A candidate native implementation was evaluated: `@nitro-mlkit/object-detection` and `@nitro-mlkit/pose-detection`. Their published package manifests currently require `@expo/config-plugins >=55`, while this app is Expo SDK 54. The upstream project also marks both packages as Android-verified but iOS device runtime pending. Therefore they must not be added to this SDK 54/iPhone target as if they were production-ready. A deliberate Expo SDK upgrade and physical iPhone validation (or a different runtime proven compatible with SDK 54 and iOS) is required first. The packages are beta and use ML Kit's coarse object categories; they are not a full YOLO/COCO object detector.
+
 1. Choose a mobile runtime compatible with Expo SDK 54 and the project's native build workflow.
 2. Supply a legally usable mobile model (TFLite/Core ML/ONNX as supported by the selected runtime), not the server-side Ultralytics `.pt` checkpoint.
 3. Benchmark latency, memory, thermal behavior, and detection quality on the target phone.
@@ -34,4 +36,4 @@ The local face-identity path must remain local: no face images, face embeddings,
 
 ## Current status
 
-Development branch created. Existing face-recognition implementation inspected. Object detection is not yet implemented or tested in this mobile app. No claim of end-to-end offline operation should be made until a compatible model/runtime is added and physical-device tests pass.
+Development branch created. Existing face-recognition implementation inspected. Candidate ML Kit object-detection and pose packages evaluated; their current Expo plugin peer range excludes SDK 54, and iOS device inference is not yet validated upstream. Object detection is not yet implemented or tested in this mobile app. No claim of end-to-end offline operation should be made until a compatible model/runtime is added and physical-device tests pass.
