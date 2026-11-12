@@ -14,7 +14,8 @@ export type PoseAnalysis = {
 };
 
 const midpoint = (a: PoseLandmark, b: PoseLandmark) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-function angle(a: PoseLandmark, b: PoseLandmark, c: PoseLandmark) {
+type Point2D = { x: number; y: number };
+function angle(a: Point2D, b: Point2D, c: Point2D) {
   const ab = { x: a.x - b.x, y: a.y - b.y };
   const cb = { x: c.x - b.x, y: c.y - b.y };
   const dot = ab.x * cb.x + ab.y * cb.y;
