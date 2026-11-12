@@ -33,6 +33,7 @@ export class GeminiLiveVisionSession {
         socket.send(JSON.stringify({ setup: {
           model: credentials.model.startsWith("models/") ? credentials.model : "models/" + credentials.model,
           generationConfig: { responseModalities: ["AUDIO"] },
+          outputAudioTranscription: {},
           systemInstruction: { parts: [{ text: "You are X-Glasses, a concise visual assistant. Describe only what is visible and clearly distinguish uncertainty." }] },
         } }));
       };
