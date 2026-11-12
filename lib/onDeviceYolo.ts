@@ -147,8 +147,9 @@ export function formatLocalDetections(detections: Detection[]) {
   if (!detections.length) return "I could not identify a clear object in the camera view.";
   const descriptions = detections.slice(0, 6).map((item) => {
     const confidence = Math.round(item.confidence * 100);
-    const position = item.relative_position === "center" ? "in front" : `to your ${item.relative_position}`;
-    return `${item.class_name} ${position} (${confidence}% confidence)`;
+    const horizontal = item.relative_position === "center" ? "in front" : `to your ${item.relative_position}`;
+    const vertical = item.vertical_position && item.vertical_position !== "middle" ? `, ${item.vertical_position}` : "";
+    return `${item.class_name} ${horizontal}${vertical} (${confidence}% confidence)`;
   });
   return `On-device YOLO detected ${detections.length} object${detections.length === 1 ? "" : "s"}. ${descriptions.join("; ")}.`;
 }
