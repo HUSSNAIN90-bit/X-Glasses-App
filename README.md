@@ -46,3 +46,8 @@ Because this uses native ML Kit/TFLite modules, **Expo Go is not enough**. Build
 
 The recognition package currently requires Android API 26+; iOS recognition should be tested on a physical device rather than the simulator.
 
+
+
+## Gemini Live Vision (mobile streaming)
+
+The camera screen includes a **Start Gemini Live Vision** control. The phone captures and streams one JPEG frame per second directly to the Gemini Live WebSocket; camera frames do not pass through FastAPI. FastAPI only issues a single-use, short-lived Gemini ephemeral token. Configure `GEMINI_API_KEY` on the backend and optionally set `GEMINI_LIVE_MODEL` (default: `gemini-3.8-live`). Never place the Gemini API key in the Expo app or `EXPO_PUBLIC_*` variables. Live video sessions are subject to Gemini model/session limits and require an internet connection.
