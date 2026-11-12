@@ -42,7 +42,7 @@ async function loadModel(): Promise<LoadedModel> {
   if (manifest.model !== "yolo26n" || manifest.format !== "litert" || !manifest.labels?.length) {
     throw new Error("The backend returned an unsupported YOLO26 model manifest.");
   }
-  const asset = Asset.fromURI(`${baseUrl}/api/models/yolo26n.tflite`);
+  const asset = Asset.fromURI(`${baseUrl}/api/models/yolo26n.tflite?v=${manifest.sha256}`);
   await asset.downloadAsync();
   const uri = asset.localUri || asset.uri;
   let model: TfliteModel;
