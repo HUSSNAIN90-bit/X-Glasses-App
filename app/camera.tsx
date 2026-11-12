@@ -124,7 +124,7 @@ export default function Camera() {
           void startLiveVision();
         } else if (/\b(stop|disable|turn off)\b.*\b(live vision|live mode)\b/.test(normalized)) {
           stopLiveVision();
-        } else {
+        } else if (!inFlightRef.current) {
           void runCommand(transcript);
         }
       }
@@ -176,7 +176,6 @@ export default function Camera() {
     setLiveVision(false);
     setNotice("Live Vision stopped.");
     setStatus("idle");
-    try { speechRecognition?.ExpoSpeechRecognitionModule.stop(); } catch {}
   }
 
   async function startLiveVision() {
