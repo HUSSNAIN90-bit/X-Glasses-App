@@ -361,7 +361,7 @@ export default function Camera() {
             onContentSizeChange={() => { if (command.includes("\n")) scrollToBottom(false); }}
           />
           <View style={styles.actions}>
-            <Pressable disabled={busy} onPress={() => liveVision ? stopLiveVision() : void startLiveVision()} style={[styles.liveToggle, liveVision && styles.liveToggleOn]}>
+            <Pressable disabled={busy} onPress={() => liveVision ? stopLiveVision() : (void startLiveVision(), void startVoice())} style={[styles.liveToggle, liveVision && styles.liveToggleOn]}>
               <Text style={styles.liveToggleText}>{liveVision ? "STOP LIVE" : "START LIVE"}</Text>
             </Pressable>
             <Pressable disabled={busy || !command.trim()} onPress={() => void runCommand()} style={[styles.capture, (!command.trim() || busy) && styles.disabled]}>
