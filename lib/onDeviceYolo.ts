@@ -57,14 +57,18 @@ async function loadModel() {
   if (!inputShape || inputShape.length !== 4 || inputShape[3] !== 3 || !outputShape) {
     throw new Error("YOLO26 LiteRT tensor shapes do not match the expected image detector.");
   }
-  return { model, labels: manifest.labels, inputSize: inputShape[1] };
+  const inputSize = inputShape[1];
+  if (!inputSize || inputSize < 32) throw new Error("YOLO26 input tensor has an invalid image size.");
+  return { model, labels: manifest.labels, inputSize };
 }
 
 async function getModel() {
   if (!modelPromise) {
     modelPromise = loadModel().catch((error) => { modelPromise = null; throw error; });
   }
-  return modelPromise;
+  const pending = modelPromise;
+  if (!pending) throw new Error("YOLO26 model could not be initialized.");
+  return pending;
 }
 
 function makeLetterboxedInput(base64: string, inputSize: number, dataType: string) {
@@ -83,15 +87,15 @@ function makeLetterboxedInput(base64: string, inputSize: number, dataType: strin
       const sourceX = Math.min(decoded.width - 1, Math.floor(x / scale));
       const sourceOffset = (sourceY * decoded.width + sourceX) * 4;
       const targetOffset = ((y + padY) * inputSize + x + padX) * 3;
-      pixels[targetOffset] = decoded.data[sourceOffset];
-      pixels[targetOffset + 1] = decoded.data[sourceOffset + 1];
-      pixels[targetOffset + 2] = decoded.data[sourceOffset + 2];
+      pixels[targetOffset] = decoded.data[sourceOffset] ?? 0;
+      pixels[targetOffset + 1] = decoded.data[sourceOffset + 1] ?? 0;
+      pixels[targetOffset + 2] = decoded.data[sourceOffset + 2] ?? 0;
     }
   }
   let input: ArrayBuffer;
   if (dataType === "float32") {
     const floats = new Float32Array(pixels.length);
-    for (let index = 0; index < pixels.length; index += 1) floats[index] = pixels[index] / 255;
+    for (let index = 0; index < pixels.length; index += 1) floats[index] = (pixels[index] ?? 0) / 255;
     input = floats.buffer.slice(0) as ArrayBuffer;
   } else if (dataType === "uint8") {
     input = pixels.buffer.slice(0) as ArrayBuffer;
@@ -110,27 +114,30 @@ function describePosition(x: number, y: number) {
 export async function detectObjectsOnDevice(base64: string): Promise<Detection[]> {
   const { model, labels, inputSize } = await getModel();
   const inputTensor = model.inputs[0];
+  const outputTensor = model.outputs[0];
+  if (!inputTensor || !outputTensor) throw new Error("YOLO26 model is missing an input or output tensor.");
   const prepared = makeLetterboxedInput(base64, inputSize, inputTensor.dataType);
   const outputs = await model.run([prepared.input]);
-  const outputTensor = model.outputs[0];
+  const outputBuffer = outputs[0];
+  if (!outputBuffer) throw new Error("YOLO26 did not return an output tensor.");
   if (outputTensor.dataType !== "float32") throw new Error(`Unsupported YOLO26 output type: ${outputTensor.dataType}`);
-  const values = new Float32Array(outputs[0]);
+  const values = new Float32Array(outputBuffer);
   const shape = outputTensor.shape;
-  const columns = shape[shape.length - 1];
-  const rows = shape[shape.length - 2];
+  const columns = shape[shape.length - 1] ?? 0;
+  const rows = shape[shape.length - 2] ?? 0;
   if (columns !== 6 || values.length < rows * 6) {
     throw new Error(`Unexpected YOLO26 output tensor shape: ${shape.join("x")}`);
   }
   const detections: Detection[] = [];
   for (let row = 0; row < rows; row += 1) {
     const offset = row * 6;
-    const score = values[offset + 4];
+    const score = values[offset + 4] ?? Number.NaN;
     if (!Number.isFinite(score) || score < CONFIDENCE_THRESHOLD) continue;
-    const classId = Math.round(values[offset + 5]);
-    const x1 = Math.max(0, Math.min(prepared.width, (values[offset] - prepared.padX) / prepared.scale));
-    const y1 = Math.max(0, Math.min(prepared.height, (values[offset + 1] - prepared.padY) / prepared.scale));
-    const x2 = Math.max(0, Math.min(prepared.width, (values[offset + 2] - prepared.padX) / prepared.scale));
-    const y2 = Math.max(0, Math.min(prepared.height, (values[offset + 3] - prepared.padY) / prepared.scale));
+    const classId = Math.round(values[offset + 5] ?? -1);
+    const x1 = Math.max(0, Math.min(prepared.width, ((values[offset] ?? 0) - prepared.padX) / prepared.scale));
+    const y1 = Math.max(0, Math.min(prepared.height, ((values[offset + 1] ?? 0) - prepared.padY) / prepared.scale));
+    const x2 = Math.max(0, Math.min(prepared.width, ((values[offset + 2] ?? 0) - prepared.padX) / prepared.scale));
+    const y2 = Math.max(0, Math.min(prepared.height, ((values[offset + 3] ?? 0) - prepared.padY) / prepared.scale));
     if (x2 <= x1 || y2 <= y1) continue;
     const position = describePosition((x1 + x2) / 2 / prepared.width, (y1 + y2) / 2 / prepared.height);
     detections.push({
