@@ -93,12 +93,16 @@ export default function Camera() {
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const inFlightRef = useRef(false);
+  const liveVisionRef = useRef(false);
+  const liveLoopRunningRef = useRef(false);
+  const lastLiveReplyRef = useRef("");
   const preferredVoiceRef = useRef<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [command, setCommand] = useState("");
   const [answer, setAnswer] = useState<CommandResponse | null>(null);
   const [notice, setNotice] = useState("");
   const [recognizing, setRecognizing] = useState(false);
+  const [liveVision, setLiveVision] = useState(false);
   const [status, setStatus] = useState<AssistantStatus>("idle");
   const session = useAppStore((state) => state.sessionId);
 
@@ -115,7 +119,14 @@ export default function Camera() {
       const transcript = event.results?.[0]?.transcript?.trim() ?? "";
       if (event.isFinal && transcript && !inFlightRef.current) {
         setCommand(transcript);
-        void runCommand(transcript);
+        const normalized = transcript.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+        if (/\b(start|enable|turn on)\b.*\b(live vision|live mode)\b/.test(normalized)) {
+          void startLiveVision();
+        } else if (/\b(stop|disable|turn off)\b.*\b(live vision|live mode)\b/.test(normalized)) {
+          stopLiveVision();
+        } else {
+          void runCommand(transcript);
+        }
       }
     });
     speechRecognition.useSpeechRecognitionEvent("error", (event) => {
@@ -129,6 +140,7 @@ export default function Camera() {
   useEffect(() => {
     void choosePreferredVoice();
     return () => {
+      liveVisionRef.current = false;
       try { speechRecognition?.ExpoSpeechRecognitionModule.abort(); } catch {}
       Speech.stop();
     };
@@ -157,6 +169,59 @@ export default function Camera() {
     }
     if (!uris.length) throw new Error("Camera did not return a frame.");
     return uris;
+  }
+
+  function stopLiveVision() {
+    liveVisionRef.current = false;
+    setLiveVision(false);
+    setNotice("Live Vision stopped.");
+    setStatus("idle");
+    try { speechRecognition?.ExpoSpeechRecognitionModule.stop(); } catch {}
+  }
+
+  async function startLiveVision() {
+    if (liveLoopRunningRef.current) return;
+    if (!cameraRef.current) {
+      setNotice("Camera is not ready yet.");
+      return;
+    }
+    liveVisionRef.current = true;
+    liveLoopRunningRef.current = true;
+    setLiveVision(true);
+    setNotice("Live Vision started. Checking selected frames every 10 seconds.");
+    setStatus("processing");
+    try {
+      while (liveVisionRef.current) {
+        if (!inFlightRef.current && cameraRef.current) {
+          inFlightRef.current = true;
+          try {
+            const photo = await cameraRef.current.takePictureAsync({ quality: 0.48, skipProcessing: true });
+            if (photo?.uri && liveVisionRef.current) {
+              const result = await analyzeCommandMulti(
+                session,
+                "Describe important objects and changes in my surroundings. Mention only useful new information and keep it brief.",
+                [photo.uri],
+                "en",
+              );
+              const reply = cleanAssistantText(result.reply);
+              if (reply && reply !== lastLiveReplyRef.current && liveVisionRef.current) {
+                lastLiveReplyRef.current = reply;
+                setNotice(reply);
+                speakFinalReply(reply);
+              }
+            }
+          } catch (error) {
+            if (liveVisionRef.current) setNotice(toUserFacingAssistantError(error));
+          } finally {
+            inFlightRef.current = false;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+      }
+    } finally {
+      liveLoopRunningRef.current = false;
+      if (!liveVisionRef.current) setLiveVision(false);
+    }
   }
 
   function speakFinalReply(text: string) {
@@ -243,7 +308,7 @@ export default function Camera() {
       if (!speechRecognition.ExpoSpeechRecognitionModule.isRecognitionAvailable()) throw new Error("Speech recognition is unavailable on this device.");
       const speechPermission = await speechRecognition.ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!speechPermission.granted) throw new Error("Microphone and speech-recognition permission is required.");
-      speechRecognition.ExpoSpeechRecognitionModule.start({ lang: "en-US", interimResults: true, continuous: false, maxAlternatives: 1 });
+      speechRecognition.ExpoSpeechRecognitionModule.start({ lang: "en-US", interimResults: true, continuous: true, maxAlternatives: 1 });
     } catch (error) {
       setStatus("error");
       setNotice(cleanAssistantText(error instanceof Error ? error.message : "") || "Unable to start voice recognition.");
@@ -297,6 +362,9 @@ export default function Camera() {
             onContentSizeChange={() => { if (command.includes("\n")) scrollToBottom(false); }}
           />
           <View style={styles.actions}>
+            <Pressable disabled={busy} onPress={() => liveVision ? stopLiveVision() : void startLiveVision()} style={[styles.liveToggle, liveVision && styles.liveToggleOn]}>
+              <Text style={styles.liveToggleText}>{liveVision ? "STOP LIVE" : "START LIVE"}</Text>
+            </Pressable>
             <Pressable disabled={busy || !command.trim()} onPress={() => void runCommand()} style={[styles.capture, (!command.trim() || busy) && styles.disabled]}>
               <Text style={styles.captureText}>{busy ? "WORKING…" : "ASK X"}</Text>
             </Pressable>
@@ -352,6 +420,9 @@ const styles = StyleSheet.create({
   voiceHint: { color: "#68717E", fontSize: 11, marginBottom: 9 },
   input: { minHeight: 62, maxHeight: 125, borderRadius: 16, backgroundColor: "rgba(255,255,255,.055)", color: "#FFF", paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, lineHeight: 22, textAlignVertical: "top" },
   actions: { flexDirection: "row", gap: 10, marginTop: 10 },
+  liveToggle: { minHeight: 48, paddingHorizontal: 12, borderRadius: 14, backgroundColor: "rgba(98,245,155,.13)", borderWidth: 1, borderColor: "rgba(98,245,155,.35)", alignItems: "center", justifyContent: "center" },
+  liveToggleOn: { backgroundColor: "rgba(255,90,90,.2)", borderColor: "rgba(255,100,100,.5)" },
+  liveToggleText: { color: "#FFF", fontSize: 10, fontWeight: "900", letterSpacing: 0.4 },
   capture: { flex: 1, minHeight: 52, borderRadius: 16, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center" },
   disabled: { opacity: 0.45 },
   captureText: { color: "#090A0D", fontWeight: "900", letterSpacing: 0.4 },
