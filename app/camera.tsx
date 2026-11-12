@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { analyzeCommandMulti, CommandResponse, createGeminiLiveToken } from "@/lib/api";
 import { GeminiLiveVisionSession } from "@/lib/geminiLive";
+import { analyzeHumanPose } from "@/lib/poseDetection";
 import { answerLocalFaceCommand, enrollLocalFace, isFaceIdentityCommand } from "@/lib/faceRecognition";
 import {
   AssistantStatus,
@@ -51,6 +52,7 @@ const QUICK_COMMANDS = [
   "Identify this product.",
   "Read the label and price.",
   "Who is this person?",
+  "Analyze the person posture.",
 ];
 const MAX_CAPTURE_ATTEMPTS = 2;
 
@@ -237,6 +239,20 @@ export default function Camera() {
     setNotice("");
     setAnswer(null);
     try {
+      if (/\b(posture|pose|body position|sitting|standing|bending)\b/i.test(trimmedCommand)) {
+        const [uri] = await captureCommandFrames(1);
+        if (!uri) throw new Error("The camera did not capture a frame for posture analysis.");
+        setStatus("processing");
+        const pose = await analyzeHumanPose(uri);
+        const confidence = Math.round(pose.confidence * 100);
+        const reply = pose.detected
+          ? pose.posture === "unknown" ? pose.explanation : pose.explanation + " Confidence: " + confidence + " percent."
+          : pose.explanation;
+        setNotice(reply);
+        speakFinalReply(reply);
+        return;
+      }
+
       const enrollment = parseEnrollmentCommand(trimmedCommand);
       if (enrollment) {
         setNotice("Saving several clear face views automatically...");
