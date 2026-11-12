@@ -42,7 +42,7 @@ async function loadModel(): Promise<LoadedModel> {
   if (manifest.model !== "yolo26n" || manifest.format !== "litert" || !manifest.labels?.length) {
     throw new Error("The backend returned an unsupported YOLO26 model manifest.");
   }
-  const asset = Asset.fromURI(\`\${baseUrl}/api/models/yolo26n.tflite\`);
+  const asset = Asset.fromURI(`${baseUrl}/api/models/yolo26n.tflite`);
   await asset.downloadAsync();
   const uri = asset.localUri || asset.uri;
   let model: TfliteModel;
@@ -65,7 +65,7 @@ async function loadModel(): Promise<LoadedModel> {
     inputLayout = "NHWC";
     inputSize = inputShape[1];
   } else {
-    throw new Error(\`Unsupported YOLO26 image tensor layout: \${inputShape.join("x")}\`);
+    throw new Error(`Unsupported YOLO26 image tensor layout: ${inputShape.join("x")}`);
   }
   if (!inputSize || inputSize < 32) throw new Error("YOLO26 input tensor has an invalid image size.");
   return { model, labels: manifest.labels, inputSize, inputLayout };
@@ -128,7 +128,7 @@ function makeLetterboxedInput(base64: string, inputSize: number, dataType: strin
       input = planar.buffer.slice(0) as ArrayBuffer;
     }
   } else {
-    throw new Error(\`Unsupported YOLO26 input tensor type: \${dataType}\`);
+    throw new Error(`Unsupported YOLO26 input tensor type: ${dataType}`);
   }
   return { input, width: decoded.width, height: decoded.height, scale, padX, padY };
 }
@@ -166,7 +166,7 @@ function toDetection(candidate: Candidate, labels: string[], prepared: PreparedI
   const centerX = (x1 + x2) / 2 / prepared.width;
   const centerY = (y1 + y2) / 2 / prepared.height;
   return {
-    class_name: labels[candidate.classId] ?? \`object \${candidate.classId}\`,
+    class_name: labels[candidate.classId] ?? `object ${candidate.classId}`,
     confidence: candidate.score,
     x1, y1, x2, y2,
     relative_position: centerX < 0.33 ? "left" : centerX > 0.66 ? "right" : "center",
@@ -193,21 +193,22 @@ function decodeEndToEnd(values: Float32Array, rows: number, inputSize: number): 
   return candidates;
 }
 
-function decodeRawOneToMany(values: Float32Array, channels: number, anchors: number, inputSize: number): Candidate[] {
-  if (channels < 5) throw new Error(\`Unsupported YOLO26 raw output shape: \${channels}x\${anchors}\`);
+function decodeRawOneToMany(values: Float32Array, channels: number, anchors: number, inputSize: number, channelFirst: boolean): Candidate[] {
+  if (channels < 5) throw new Error(`Unsupported YOLO26 raw output shape: ${channels}x${anchors}`);
   const candidates: Candidate[] = [];
   for (let anchor = 0; anchor < anchors; anchor += 1) {
     let score = 0;
     let classId = -1;
     for (let channel = 4; channel < channels; channel += 1) {
-      const classScore = values[channel * anchors + anchor] ?? 0;
+      const classScore = values[channelFirst ? channel * anchors + anchor : anchor * channels + channel] ?? 0;
       if (classScore > score) { score = classScore; classId = channel - 4; }
     }
     if (score < CONFIDENCE_THRESHOLD) continue;
-    let centerX = values[anchor] ?? 0;
-    let centerY = values[anchors + anchor] ?? 0;
-    let width = values[anchors * 2 + anchor] ?? 0;
-    let height = values[anchors * 3 + anchor] ?? 0;
+    const read = (channel: number) => values[channelFirst ? channel * anchors + anchor : anchor * channels + channel] ?? 0;
+    let centerX = read(0);
+    let centerY = read(1);
+    let width = read(2);
+    let height = read(3);
     if (Math.max(Math.abs(centerX), Math.abs(centerY), Math.abs(width), Math.abs(height)) <= 1.5) {
       centerX *= inputSize; centerY *= inputSize; width *= inputSize; height *= inputSize;
     }
@@ -232,7 +233,7 @@ export async function detectObjectsOnDevice(base64: string): Promise<Detection[]
   const outputs = await model.run([prepared.input]);
   const outputBuffer = outputs[0];
   if (!outputBuffer) throw new Error("YOLO26 did not return an output tensor.");
-  if (outputTensor.dataType !== "float32") throw new Error(\`Unsupported YOLO26 output type: \${outputTensor.dataType}\`);
+  if (outputTensor.dataType !== "float32") throw new Error(`Unsupported YOLO26 output type: ${outputTensor.dataType}`);
   const values = new Float32Array(outputBuffer);
   const shape = outputTensor.shape;
   const channels = shape[shape.length - 2] ?? 0;
@@ -241,9 +242,11 @@ export async function detectObjectsOnDevice(base64: string): Promise<Detection[]
   if (columns === 6) {
     candidates = decodeEndToEnd(values, channels, inputSize);
   } else if (channels >= 5 && columns > 6) {
-    candidates = decodeRawOneToMany(values, channels, columns, inputSize);
+    candidates = decodeRawOneToMany(values, channels, columns, inputSize, true);
+  } else if (columns >= 5 && channels > 6) {
+    candidates = decodeRawOneToMany(values, columns, channels, inputSize, false);
   } else {
-    throw new Error(\`Unexpected YOLO26 output tensor shape: \${shape.join("x")}\`);
+    throw new Error(`Unexpected YOLO26 output tensor shape: ${shape.join("x")}`);
   }
   return nonMaximumSuppression(candidates)
     .map((candidate) => toDetection(candidate, labels, prepared))
@@ -255,9 +258,9 @@ export function formatLocalDetections(detections: Detection[]) {
   if (!detections.length) return "I could not identify a clear object in the camera view.";
   const descriptions = detections.slice(0, 6).map((item) => {
     const confidence = Math.round(item.confidence * 100);
-    const horizontal = item.relative_position === "center" ? "in front" : \`to your \${item.relative_position}\`;
-    const vertical = item.vertical_position && item.vertical_position !== "middle" ? \`, \${item.vertical_position}\` : "";
-    return \`\${item.class_name} \${horizontal}\${vertical} (\${confidence}% confidence)\`;
+    const horizontal = item.relative_position === "center" ? "in front" : `to your ${item.relative_position}`;
+    const vertical = item.vertical_position && item.vertical_position !== "middle" ? `, ${item.vertical_position}` : "";
+    return `${item.class_name} ${horizontal}${vertical} (${confidence}% confidence)`;
   });
-  return \`On-device YOLO detected \${detections.length} object\${detections.length === 1 ? "" : "s"}. \${descriptions.join("; ")}.\`;
+  return `On-device YOLO detected ${detections.length} object${detections.length === 1 ? "" : "s"}. ${descriptions.join("; ")}.`;
 }
