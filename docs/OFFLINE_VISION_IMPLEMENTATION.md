@@ -37,3 +37,11 @@ A candidate native implementation was evaluated: `@nitro-mlkit/object-detection`
 ## Current status
 
 Development branch created. Existing face-recognition implementation inspected. Candidate ML Kit object-detection and pose packages evaluated; their current Expo plugin peer range excludes SDK 54, and iOS device inference is not yet validated upstream. Object detection is not yet implemented or tested in this mobile app. No claim of end-to-end offline operation should be made until a compatible model/runtime is added and physical-device tests pass.
+
+
+## Follow-up implementation update (2026-11-12)
+
+- Gemini Live Vision now has a mobile-to-Gemini WebSocket path. FastAPI provisions a single-use ephemeral token; camera JPEG frames stream from the phone at 1 fps and do not transit the backend.
+- Android posture requests now use `@mefitzgerald/expo-pose-detection` (Expo SDK 54 compatible, Android-only) and derive a conservative posture label from local landmarks. iOS is explicitly guarded until a supported module is validated.
+- The Nitro ML Kit pose/object-detection packages were not selected for this SDK 54 app because their published config-plugin peer range targets SDK 55+, and ML Kit object detection is not a substitute for the requested YOLO model.
+- YOLO26 `.pt` is still a backend model. A compatible mobile export, TFLite runtime, preprocessing/postprocessing and device benchmarks remain outstanding; general visual command fallback still calls the backend. Do not claim the entire app is offline yet.
