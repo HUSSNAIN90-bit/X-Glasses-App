@@ -13,7 +13,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { analyzeCommandMulti, CommandResponse } from "@/lib/api";
+import { analyzeCommandMulti, CommandResponse, createGeminiLiveToken } from "@/lib/api";
+import { GeminiLiveVisionSession } from "@/lib/geminiLive";
 import { answerLocalFaceCommand, enrollLocalFace, isFaceIdentityCommand } from "@/lib/faceRecognition";
 import {
   AssistantStatus,
@@ -93,6 +94,10 @@ export default function Camera() {
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const inFlightRef = useRef(false);
+  const liveSessionRef = useRef<GeminiLiveVisionSession | null>(null);
+  const liveFrameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveFrameBusyRef = useRef(false);
+  const [geminiLive, setGeminiLive] = useState(false);
   const preferredVoiceRef = useRef<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [command, setCommand] = useState("");
@@ -131,6 +136,8 @@ export default function Camera() {
     return () => {
       try { speechRecognition?.ExpoSpeechRecognitionModule.abort(); } catch {}
       Speech.stop();
+      if (liveFrameTimerRef.current) clearInterval(liveFrameTimerRef.current);
+      liveSessionRef.current?.disconnect();
     };
   }, []);
 
@@ -174,6 +181,52 @@ export default function Camera() {
     });
   }
 
+  async function startGeminiLive() {
+    if (geminiLive || busy) return;
+    setNotice("Connecting to Gemini Live Vision…");
+    try {
+      const live = new GeminiLiveVisionSession({
+        onSetupComplete: () => {
+          setGeminiLive(true);
+          setNotice("Gemini Live Vision connected. Camera frames stream directly from this phone.");
+          liveFrameTimerRef.current = setInterval(async () => {
+            if (liveFrameBusyRef.current || !cameraRef.current || !live.isReady) return;
+            liveFrameBusyRef.current = true;
+            try {
+              const frame = await cameraRef.current.takePictureAsync({ quality: 0.45, base64: true, skipProcessing: true });
+              if (frame?.base64) live.sendVideoFrame(frame.base64);
+            } catch (error) {
+              setNotice(cleanAssistantText(error instanceof Error ? error.message : "") || "A camera frame could not be streamed.");
+            } finally { liveFrameBusyRef.current = false; }
+          }, 1000);
+        },
+        onMessage: (message) => {
+          const content = message.serverContent as Record<string, unknown> | undefined;
+          const transcription = content?.outputTranscription as { text?: string } | undefined;
+          const modelTurn = content?.modelTurn as { parts?: Array<{ text?: string }> } | undefined;
+          const text = transcription?.text || modelTurn?.parts?.map((part) => part.text || "").join(" ").trim();
+          if (text) { const reply = cleanAssistantText(text); setNotice(reply); speakFinalReply(reply); }
+        },
+        onError: (message) => setNotice(message),
+        onClose: () => setGeminiLive(false),
+      });
+      liveSessionRef.current = live;
+      await live.connect(createGeminiLiveToken);
+    } catch (error) {
+      liveSessionRef.current?.disconnect();
+      liveSessionRef.current = null;
+      setGeminiLive(false);
+      setNotice(cleanAssistantText(error instanceof Error ? error.message : "") || "Gemini Live could not connect.");
+    }
+  }
+
+  function stopGeminiLive() {
+    if (liveFrameTimerRef.current) { clearInterval(liveFrameTimerRef.current); liveFrameTimerRef.current = null; }
+    liveSessionRef.current?.disconnect();
+    liveSessionRef.current = null;
+    setGeminiLive(false);
+    setNotice("Gemini Live Vision stopped.");
+  }
   async function runCommand(nextCommand = command) {
     const trimmedCommand = nextCommand.trim();
     if (!trimmedCommand || inFlightRef.current || !cameraRef.current) return;
@@ -304,6 +357,9 @@ export default function Camera() {
               <Text style={styles.micText}>{recognizing ? "STOP" : "MIC"}</Text>
             </Pressable>
           </View>
+          <Pressable disabled={busy} onPress={geminiLive ? stopGeminiLive : () => void startGeminiLive()} style={[styles.liveVisionButton, geminiLive && styles.liveVisionButtonOn, busy && styles.disabled]}>
+            <Text style={styles.liveVisionButtonText}>{geminiLive ? "STOP GEMINI LIVE VISION" : "START GEMINI LIVE VISION"}</Text>
+          </Pressable>
           <Text style={styles.hint}>
             {status === "listening" ? "Listening… say your command normally." : status === "capturing" ? "Capturing the best camera frames…" : status === "processing" ? "X is analyzing the view…" : status === "speaking" ? "X is speaking…" : "Try: “What is this?” or “Read the price.”"}
           </Text>
