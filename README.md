@@ -55,4 +55,4 @@ The camera screen includes a **Start Gemini Live Vision** control. The phone cap
 
 ## On-device human posture analysis
 
-Posture/pose commands now use `@nitro-mlkit/pose-detection` through `NitroPose.detect()` on the captured local camera image. The module returns 33 ML Kit body landmarks; the app derives a conservative standing/sitting/bending estimate from visible shoulder, hip, knee and ankle points. The inference stays on-device. The native package requires a fresh development build after `npm install`; Android is the validated target for this beta package, while iOS runtime still needs device validation.
+Posture/pose commands now use `@mefitzgerald/expo-pose-detection` through `PoseDetection.detectPose()` on the captured local camera image. The module returns 33 ML Kit body landmarks; the app derives a conservative standing/sitting/bending estimate from visible shoulder, hip, knee and ankle points. The inference stays on-device. The native package requires a fresh development build after `npm install`; This SDK 54-compatible module is Android-only; iOS requires a separate validated implementation.
