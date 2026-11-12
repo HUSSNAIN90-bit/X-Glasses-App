@@ -193,6 +193,22 @@ function decodeEndToEnd(values: Float32Array, rows: number, inputSize: number): 
   return candidates;
 }
 
+function decodeEndToEndTransposed(values: Float32Array, rows: number, inputSize: number): Candidate[] {
+  const candidates: Candidate[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    const score = values[4 * rows + row] ?? Number.NaN;
+    if (!Number.isFinite(score) || score < CONFIDENCE_THRESHOLD) continue;
+    let x1 = values[row] ?? 0;
+    let y1 = values[rows + row] ?? 0;
+    let x2 = values[2 * rows + row] ?? 0;
+    let y2 = values[3 * rows + row] ?? 0;
+    if (Math.max(Math.abs(x1), Math.abs(y1), Math.abs(x2), Math.abs(y2)) <= 1.5) {
+      x1 *= inputSize; y1 *= inputSize; x2 *= inputSize; y2 *= inputSize;
+    }
+    candidates.push({ classId: Math.round(values[5 * rows + row] ?? -1), score, x1, y1, x2, y2 });
+  }
+  return candidates;
+}
 function decodeRawOneToMany(values: Float32Array, channels: number, anchors: number, inputSize: number, channelFirst: boolean): Candidate[] {
   if (channels < 5) throw new Error(`Unsupported YOLO26 raw output shape: ${channels}x${anchors}`);
   const candidates: Candidate[] = [];
@@ -241,6 +257,8 @@ export async function detectObjectsOnDevice(base64: string): Promise<Detection[]
   let candidates: Candidate[];
   if (columns === 6) {
     candidates = decodeEndToEnd(values, channels, inputSize);
+  } else if (channels === 6 && columns > 6) {
+    candidates = decodeEndToEndTransposed(values, columns, inputSize);
   } else if (channels >= 5 && columns > 6) {
     candidates = decodeRawOneToMany(values, channels, columns, inputSize, true);
   } else if (columns >= 5 && channels > 6) {
@@ -248,7 +266,7 @@ export async function detectObjectsOnDevice(base64: string): Promise<Detection[]
   } else {
     throw new Error(`Unexpected YOLO26 output tensor shape: ${shape.join("x")}`);
   }
-  return nonMaximumSuppression(candidates)
+  return candidates
     .map((candidate) => toDetection(candidate, labels, prepared))
     .filter((item): item is Detection => item !== null)
     .slice(0, 20);
