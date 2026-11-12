@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { PoseDetection } from "@mefitzgerald/expo-pose-detection";
 
 export type PoseLandmark = { type: number; x: number; y: number; z: number; inFrameLikelihood: number };
@@ -23,6 +24,7 @@ function angle(a: PoseLandmark, b: PoseLandmark, c: PoseLandmark) {
 }
 
 export async function analyzeHumanPose(uri: string): Promise<PoseAnalysis> {
+  if (Platform.OS !== "android") throw new Error("On-device posture detection is currently supported on Android only.");
   const landmarks = await PoseDetection.detectPose(uri) as PoseLandmark[];
   if (!landmarks.length) return { detected: false, posture: "unknown", confidence: 0, landmarks: [], explanation: "I cannot see a complete human body clearly enough to analyze posture." };
   const byType = new Map(landmarks.map((point) => [point.type, point]));
