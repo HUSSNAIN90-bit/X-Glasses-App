@@ -13,7 +13,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { analyzeCommandMulti, CommandResponse } from "@/lib/api";
+import { analyzeCommandMulti, CommandResponse, createGeminiLiveToken } from "@/lib/api";
+import { GeminiLiveVisionSession } from "@/lib/geminiLive";
+import { analyzeHumanPose } from "@/lib/poseDetection";
+import { detectObjectsOnDevice, formatLocalDetections } from "@/lib/onDeviceYolo";
 import { answerLocalFaceCommand, enrollLocalFace, isFaceIdentityCommand } from "@/lib/faceRecognition";
 import {
   AssistantStatus,
@@ -50,6 +53,7 @@ const QUICK_COMMANDS = [
   "Identify this product.",
   "Read the label and price.",
   "Who is this person?",
+  "Analyze the person posture.",
 ];
 const MAX_CAPTURE_ATTEMPTS = 2;
 
@@ -93,6 +97,10 @@ export default function Camera() {
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const inFlightRef = useRef(false);
+  const liveSessionRef = useRef<GeminiLiveVisionSession | null>(null);
+  const liveFrameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveFrameBusyRef = useRef(false);
+  const [geminiLive, setGeminiLive] = useState(false);
   const preferredVoiceRef = useRef<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [command, setCommand] = useState("");
@@ -131,6 +139,8 @@ export default function Camera() {
     return () => {
       try { speechRecognition?.ExpoSpeechRecognitionModule.abort(); } catch {}
       Speech.stop();
+      if (liveFrameTimerRef.current) clearInterval(liveFrameTimerRef.current);
+      liveSessionRef.current?.disconnect();
     };
   }, []);
 
@@ -174,6 +184,58 @@ export default function Camera() {
     });
   }
 
+  async function startGeminiLive() {
+    if (geminiLive || busy) return;
+    setNotice("Connecting to Gemini Live Vision…");
+    try {
+      const live = new GeminiLiveVisionSession({
+        onSetupComplete: () => {
+          setGeminiLive(true);
+          setNotice("Gemini Live Vision connected. Camera frames stream directly from this phone.");
+          liveFrameTimerRef.current = setInterval(async () => {
+            if (liveFrameBusyRef.current || !cameraRef.current || !live.isReady) return;
+            liveFrameBusyRef.current = true;
+            try {
+              const frame = await cameraRef.current.takePictureAsync({ quality: 0.45, base64: true, skipProcessing: true });
+              if (frame?.base64) live.sendVideoFrame(frame.base64);
+            } catch (error) {
+              setNotice(cleanAssistantText(error instanceof Error ? error.message : "") || "A camera frame could not be streamed.");
+            } finally { liveFrameBusyRef.current = false; }
+          }, 1000);
+        },
+        onMessage: (message) => {
+          const content = message.serverContent as Record<string, unknown> | undefined;
+          const transcription = content?.outputTranscription as { text?: string } | undefined;
+          const modelTurn = content?.modelTurn as { parts?: Array<{ text?: string }> } | undefined;
+          const text = transcription?.text || modelTurn?.parts?.map((part) => part.text || "").join(" ").trim();
+          if (text) { const reply = cleanAssistantText(text); setNotice(reply); speakFinalReply(reply); }
+        },
+        onError: (message) => setNotice(message),
+        onClose: () => {
+          setGeminiLive(false);
+          if (liveFrameTimerRef.current) {
+            clearInterval(liveFrameTimerRef.current);
+            liveFrameTimerRef.current = null;
+          }
+        },
+      });
+      liveSessionRef.current = live;
+      await live.connect(createGeminiLiveToken);
+    } catch (error) {
+      liveSessionRef.current?.disconnect();
+      liveSessionRef.current = null;
+      setGeminiLive(false);
+      setNotice(cleanAssistantText(error instanceof Error ? error.message : "") || "Gemini Live could not connect.");
+    }
+  }
+
+  function stopGeminiLive() {
+    if (liveFrameTimerRef.current) { clearInterval(liveFrameTimerRef.current); liveFrameTimerRef.current = null; }
+    liveSessionRef.current?.disconnect();
+    liveSessionRef.current = null;
+    setGeminiLive(false);
+    setNotice("Gemini Live Vision stopped.");
+  }
   async function runCommand(nextCommand = command) {
     const trimmedCommand = nextCommand.trim();
     if (!trimmedCommand || inFlightRef.current || !cameraRef.current) return;
@@ -184,6 +246,20 @@ export default function Camera() {
     setNotice("");
     setAnswer(null);
     try {
+      if (/\b(posture|pose|body position|sitting|standing|bending)\b/i.test(trimmedCommand)) {
+        const [uri] = await captureCommandFrames(1);
+        if (!uri) throw new Error("The camera did not capture a frame for posture analysis.");
+        setStatus("processing");
+        const pose = await analyzeHumanPose(uri);
+        const confidence = Math.round(pose.confidence * 100);
+        const reply = pose.detected
+          ? pose.posture === "unknown" ? pose.explanation : pose.explanation + " Confidence: " + confidence + " percent."
+          : pose.explanation;
+        setNotice(reply);
+        speakFinalReply(reply);
+        return;
+      }
+
       const enrollment = parseEnrollmentCommand(trimmedCommand);
       if (enrollment) {
         setNotice("Saving several clear face views automatically...");
@@ -205,6 +281,30 @@ export default function Camera() {
         scrollToBottom();
         speakFinalReply(reply);
         return;
+      }
+
+      const asksForLocalObjects =
+        /\b(what.*(see|front|around|here)|objects?|detect|count.*(people|person|object)|identify.*object)\b/i.test(trimmedCommand) &&
+        !/\b(barcode|qr|price|label|brand|product|read|text)\b/i.test(trimmedCommand);
+      if (asksForLocalObjects) {
+        try {
+          setNotice("Loading YOLO26 on this phone and analyzing the camera frame locally…");
+          const frame = await cameraRef.current.takePictureAsync({ quality: 0.72, base64: true, skipProcessing: true });
+          if (frame?.base64) {
+            setStatus("processing");
+            const detections = await detectObjectsOnDevice(frame.base64);
+            if (detections.length) {
+              const reply = formatLocalDetections(detections);
+              setNotice(reply);
+              scrollToBottom();
+              speakFinalReply(reply);
+              return;
+            }
+          }
+        } catch (localError) {
+          const reason = localError instanceof Error ? localError.message : "On-device YOLO is not ready.";
+          setNotice(`${reason} Falling back to the connected vision service.`);
+        }
       }
       let response: CommandResponse | null = null;
       for (let attempt = 0; attempt < MAX_CAPTURE_ATTEMPTS; attempt += 1) {
@@ -304,6 +404,9 @@ export default function Camera() {
               <Text style={styles.micText}>{recognizing ? "STOP" : "MIC"}</Text>
             </Pressable>
           </View>
+          <Pressable disabled={busy} onPress={geminiLive ? stopGeminiLive : () => void startGeminiLive()} style={[styles.liveVisionButton, geminiLive && styles.liveVisionButtonOn, busy && styles.disabled]}>
+            <Text style={styles.liveVisionButtonText}>{geminiLive ? "STOP GEMINI LIVE VISION" : "START GEMINI LIVE VISION"}</Text>
+          </Pressable>
           <Text style={styles.hint}>
             {status === "listening" ? "Listening… say your command normally." : status === "capturing" ? "Capturing the best camera frames…" : status === "processing" ? "X is analyzing the view…" : status === "speaking" ? "X is speaking…" : "Try: “What is this?” or “Read the price.”"}
           </Text>
@@ -358,6 +461,9 @@ const styles = StyleSheet.create({
   mic: { width: 68, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,.09)", borderWidth: 1, borderColor: "rgba(255,255,255,.14)" },
   micOn: { backgroundColor: "rgba(255,90,90,.25)", borderColor: "rgba(255,100,100,.5)" },
   micText: { fontSize: 11, color: "#FFF", fontWeight: "900", letterSpacing: 0.7 },
+  liveVisionButton: { marginTop: 12, padding: 14, borderRadius: 14, backgroundColor: "rgba(90,160,255,.16)", borderWidth: 1, borderColor: "rgba(90,160,255,.35)", alignItems: "center" },
+  liveVisionButtonOn: { backgroundColor: "rgba(103,245,154,.14)", borderColor: "rgba(103,245,154,.4)" },
+  liveVisionButtonText: { color: "#DCEBFF", fontWeight: "900", fontSize: 12, letterSpacing: 1 },
   hint: { color: "#737C88", fontSize: 12, marginTop: 9, lineHeight: 18 },
   quickHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 2, marginTop: 1 },
   sectionTitle: { color: "#727A87", fontSize: 10, letterSpacing: 2, fontWeight: "900" },

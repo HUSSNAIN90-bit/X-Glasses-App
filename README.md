@@ -46,3 +46,32 @@ Because this uses native ML Kit/TFLite modules, **Expo Go is not enough**. Build
 
 The recognition package currently requires Android API 26+; iOS recognition should be tested on a physical device rather than the simulator.
 
+
+
+## Gemini Live Vision (mobile streaming)
+
+The camera screen includes a **Start Gemini Live Vision** control. The phone captures and streams one JPEG frame per second directly to the Gemini Live WebSocket; camera frames do not pass through FastAPI. FastAPI only issues a single-use, short-lived Gemini ephemeral token. Configure `GEMINI_API_KEY` on the backend and optionally set `GEMINI_LIVE_MODEL` (default: `gemini-3.8-live`). Never place the Gemini API key in the Expo app or `EXPO_PUBLIC_*` variables. Live video sessions are subject to Gemini model/session limits and require an internet connection.
+
+
+## On-device human posture analysis
+
+Posture/pose commands now use `@mefitzgerald/expo-pose-detection` through `PoseDetection.detectPose()` on the captured local camera image. The module returns 33 ML Kit body landmarks; the app derives a conservative standing/sitting/bending estimate from visible shoulder, hip, knee and ankle points. The inference stays on-device. The native package requires a fresh development build after `npm install`; This SDK 54-compatible module is Android-only; iOS requires a separate validated implementation.
+
+
+## On-device AI and YOLO26
+
+The Android camera flow runs face enrollment/recognition locally, human pose analysis locally, and YOLO26 object detection locally when the command asks what is visible or where objects are. Gemini Live sends sampled camera frames directly from the phone to Gemini; FastAPI only provisions the short-lived token. GPT and product/label tasks continue to use the backend when semantic reasoning or OCR is needed.
+
+### Update and rebuild after the LiteRT integration
+
+```powershell
+git checkout feature/offline-face-object-detection
+git pull
+npm install
+npx expo prebuild --platform android
+npx expo run:android
+```
+
+The app downloads and caches `yolo26n.tflite` from the backend the first time it is used. The backend must have the generated file `models/yolo26n.tflite` and `models/yolo26n_manifest.json`; the `Export YOLO26 LiteRT model` GitHub Actions workflow creates and commits these artifacts to the same feature branch. Check that workflow completed successfully before testing local YOLO. If it has not run, open the repository's Actions tab and run **Export YOLO26 LiteRT model** manually. The first download needs a backend connection; inference after caching runs on-device.
+
+The app attempts the Android GPU delegate and falls back to CPU. Object-only questions use local YOLO first; product label/OCR and GPT scene reasoning retain the backend path as a fallback/specialized service.

@@ -14,6 +14,12 @@
         }
       ],
       [
+        "react-native-fast-tflite",
+        {
+          "enableAndroidGpuLibraries": true
+        }
+      ],
+      [
         "expo-speech-recognition",
         {
           "microphonePermission": "Allow X-Glasses to use the microphone for voice commands.",
