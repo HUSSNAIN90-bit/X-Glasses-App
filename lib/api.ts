@@ -112,3 +112,8 @@ export async function enrollFace(name:string,relationship:string,uri:string){con
 export async function recognizeFace(uri:string){const f=new FormData();f.append("image",part(uri,"face.jpg"));return (await api.post("/api/faces/recognize",f,{headers:{"Content-Type":"multipart/form-data"}})).data}
 export async function deletePerson(id:string){return (await api.delete(`/api/faces/people/${encodeURIComponent(id)}`)).data}
 export async function addPersonEmbedding(id:string,uri:string){const f=new FormData();f.append("image",part(uri,"face.jpg"));return (await api.post(`/api/faces/people/${encodeURIComponent(id)}/embeddings`,f,{headers:{"Content-Type":"multipart/form-data"}})).data}
+
+export async function createGeminiLiveToken(): Promise<{token:string;model:string;expires_at?:string|null}> {
+  const response = await api.post<{token:string;model:string;expires_at?:string|null}>("/api/gemini/live-token");
+  return response.data;
+}
