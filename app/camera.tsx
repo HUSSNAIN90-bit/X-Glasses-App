@@ -211,7 +211,13 @@ export default function Camera() {
           if (text) { const reply = cleanAssistantText(text); setNotice(reply); speakFinalReply(reply); }
         },
         onError: (message) => setNotice(message),
-        onClose: () => setGeminiLive(false),
+        onClose: () => {
+          setGeminiLive(false);
+          if (liveFrameTimerRef.current) {
+            clearInterval(liveFrameTimerRef.current);
+            liveFrameTimerRef.current = null;
+          }
+        },
       });
       liveSessionRef.current = live;
       await live.connect(createGeminiLiveToken);
