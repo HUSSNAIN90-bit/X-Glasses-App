@@ -16,6 +16,7 @@ import {
 import { analyzeCommandMulti, CommandResponse, createGeminiLiveToken } from "@/lib/api";
 import { GeminiLiveVisionSession } from "@/lib/geminiLive";
 import { analyzeHumanPose } from "@/lib/poseDetection";
+import { detectObjectsOnDevice, formatLocalDetections } from "@/lib/onDeviceYolo";
 import { answerLocalFaceCommand, enrollLocalFace, isFaceIdentityCommand } from "@/lib/faceRecognition";
 import {
   AssistantStatus,
@@ -274,6 +275,30 @@ export default function Camera() {
         scrollToBottom();
         speakFinalReply(reply);
         return;
+      }
+
+      const asksForLocalObjects =
+        /\b(what.*(see|front|around|here)|objects?|detect|count.*(people|person|object)|identify.*object)\b/i.test(trimmedCommand) &&
+        !/\b(barcode|qr|price|label|brand|product|read|text)\b/i.test(trimmedCommand);
+      if (asksForLocalObjects) {
+        try {
+          setNotice("Loading YOLO26 on this phone and analyzing the camera frame locally…");
+          const frame = await cameraRef.current.takePictureAsync({ quality: 0.72, base64: true, skipProcessing: true });
+          if (frame?.base64) {
+            setStatus("processing");
+            const detections = await detectObjectsOnDevice(frame.base64);
+            if (detections.length) {
+              const reply = formatLocalDetections(detections);
+              setNotice(reply);
+              scrollToBottom();
+              speakFinalReply(reply);
+              return;
+            }
+          }
+        } catch (localError) {
+          const reason = localError instanceof Error ? localError.message : "On-device YOLO is not ready.";
+          setNotice(`${reason} Falling back to the connected vision service.`);
+        }
       }
       let response: CommandResponse | null = null;
       for (let attempt = 0; attempt < MAX_CAPTURE_ATTEMPTS; attempt += 1) {
