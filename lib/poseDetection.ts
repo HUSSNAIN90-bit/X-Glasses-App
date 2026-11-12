@@ -1,4 +1,4 @@
-import { NitroPose } from "@nitro-mlkit/pose-detection";
+import { PoseDetection } from "@mefitzgerald/expo-pose-detection";
 
 export type PoseLandmark = { type: number; x: number; y: number; z: number; inFrameLikelihood: number };
 export type PoseAnalysis = {
@@ -23,8 +23,7 @@ function angle(a: PoseLandmark, b: PoseLandmark, c: PoseLandmark) {
 }
 
 export async function analyzeHumanPose(uri: string): Promise<PoseAnalysis> {
-  if (!NitroPose.isAvailable()) throw new Error("On-device pose detection is unavailable on this device.");
-  const landmarks = await NitroPose.detect(uri) as PoseLandmark[];
+  const landmarks = await PoseDetection.detectPose(uri) as PoseLandmark[];
   if (!landmarks.length) return { detected: false, posture: "unknown", confidence: 0, landmarks: [], explanation: "I cannot see a complete human body clearly enough to analyze posture." };
   const byType = new Map(landmarks.map((point) => [point.type, point]));
   const leftShoulder = byType.get(11), rightShoulder = byType.get(12);
