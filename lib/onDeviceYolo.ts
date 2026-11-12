@@ -92,9 +92,9 @@ function makeLetterboxedInput(base64: string, inputSize: number, dataType: strin
   if (dataType === "float32") {
     const floats = new Float32Array(pixels.length);
     for (let index = 0; index < pixels.length; index += 1) floats[index] = pixels[index] / 255;
-    input = floats.buffer;
+    input = floats.buffer.slice(0) as ArrayBuffer;
   } else if (dataType === "uint8") {
-    input = pixels.buffer;
+    input = pixels.buffer.slice(0) as ArrayBuffer;
   } else {
     throw new Error(`Unsupported YOLO26 input tensor type: ${dataType}`);
   }
