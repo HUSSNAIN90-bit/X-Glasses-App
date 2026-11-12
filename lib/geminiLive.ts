@@ -40,6 +40,13 @@ export class GeminiLiveVisionSession {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+          const apiError = message.error as { message?: string } | undefined;
+          if (apiError) {
+            const detail = apiError.message || "Gemini Live rejected the session setup.";
+            this.callbacks.onError?.(detail);
+            if (!this.ready) reject(new Error(detail));
+            return;
+          }
           if (message.setupComplete) { this.ready = true; this.callbacks.onSetupComplete?.(); resolve(); }
           this.callbacks.onMessage?.(message);
         } catch { this.callbacks.onError?.("Received an unreadable Gemini Live message."); }
@@ -54,7 +61,8 @@ export class GeminiLiveVisionSession {
         this.ready = false;
         this.socket = null;
         this.callbacks.onClose?.();
-        if (wasReady && !this.closed) this.callbacks.onError?.("Gemini Live connection closed.");
+        if (!wasReady) reject(new Error("Gemini Live closed before setup completed."));
+        else if (!this.closed) this.callbacks.onError?.("Gemini Live connection closed.");
       };
     });
   }
