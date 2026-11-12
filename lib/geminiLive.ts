@@ -23,7 +23,7 @@ export class GeminiLiveVisionSession {
     const credentials = await tokenProvider();
     if (!credentials.token || !credentials.model) throw new Error("Gemini Live token response is incomplete.");
     const url = "wss://generativelanguage.googleapis.com/ws/" +
-      "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent" +
+      "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained" +
       "?access_token=" + encodeURIComponent(credentials.token);
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(url);
