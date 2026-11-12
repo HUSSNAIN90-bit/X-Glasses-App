@@ -117,3 +117,7 @@ export async function createGeminiLiveToken(): Promise<{token:string;model:strin
   const response = await api.post<{token:string;model:string;expires_at?:string|null}>("/api/gemini/live-token");
   return response.data;
 }
+
+export async function getBackendBaseUrl(): Promise<string> {
+  return ensureBackendConnection();
+}
