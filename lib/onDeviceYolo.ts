@@ -17,7 +17,7 @@ const CONFIDENCE_THRESHOLD = 0.28;
 
 function decodeBase64(value: string): Uint8Array {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  const clean = value.replace(/^data:image\\/[^;]+;base64,/, "").replace(/\\s/g, "");
+  const clean = value.replace(/^data:image\/[^;]+;base64,/, "").replace(/\s/g, "");
   const output = new Uint8Array(Math.floor(clean.length * 3 / 4) - (clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0));
   let buffer = 0;
   let bits = 0;
