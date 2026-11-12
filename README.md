@@ -51,3 +51,8 @@ The recognition package currently requires Android API 26+; iOS recognition shou
 ## Gemini Live Vision (mobile streaming)
 
 The camera screen includes a **Start Gemini Live Vision** control. The phone captures and streams one JPEG frame per second directly to the Gemini Live WebSocket; camera frames do not pass through FastAPI. FastAPI only issues a single-use, short-lived Gemini ephemeral token. Configure `GEMINI_API_KEY` on the backend and optionally set `GEMINI_LIVE_MODEL` (default: `gemini-3.8-live`). Never place the Gemini API key in the Expo app or `EXPO_PUBLIC_*` variables. Live video sessions are subject to Gemini model/session limits and require an internet connection.
+
+
+## On-device human posture analysis
+
+Posture/pose commands now use `@nitro-mlkit/pose-detection` through `NitroPose.detect()` on the captured local camera image. The module returns 33 ML Kit body landmarks; the app derives a conservative standing/sitting/bending estimate from visible shoulder, hip, knee and ankle points. The inference stays on-device. The native package requires a fresh development build after `npm install`; Android is the validated target for this beta package, while iOS runtime still needs device validation.
